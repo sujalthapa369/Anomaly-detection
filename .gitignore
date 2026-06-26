@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+.venv
+venv/
+*.pkl
+!regressor_model.pkl
+!encoders.pkl
+!isolation_forest.pkl
+*.zip
+.ipynb_checkpoints/
