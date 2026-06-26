@@ -1,41 +1,75 @@
 # Anomaly Detection Engine
 
-Detect anomalous login behavior using **Random Forest regression** (supervised heuristic) and **Isolation Forest** (unsupervised anomaly detection). Deployed as a FastAPI web service with a modern animated dashboard UI.
+![Python](https://img.shields.io/badge/python-3.10+-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-009688)
+![Vercel](https://img.shields.io/badge/deployed%20on-Vercel-000000)
+![License](https://img.shields.io/badge/license-MIT-green)
+
+A dual-model login anomaly detection system combining **Random Forest regression** (supervised heuristic scoring) with **Isolation Forest** (unsupervised outlier detection). Deployed as a FastAPI web service with a single-page animated dashboard.
 
 **Live Demo:** [https://anomaly-detection-eosin.vercel.app](https://anomaly-detection-eosin.vercel.app)
+
+---
+
+## Table of Contents
+
+- [Features](#features)
+- [Architecture](#architecture)
+- [How It Works](#how-it-works)
+- [Model Performance](#model-performance)
+- [Quick Start](#quick-start)
+- [API Reference](#api-reference)
+- [Deployment](#deployment)
+- [Project Structure](#project-structure)
+- [Limitations](#limitations)
+
+---
+
+## Features
+
+- **Dual-model inference** — supervised score + unsupervised anomaly flag per request
+- **Raw value input** — accepts country names, browser names, device types — no manual encoding
+- **Animated dashboard UI** — SVG gauge, score distribution chart, staggered entrance animations
+- **Detection history** — persisted via MongoDB (optional) with localStorage fallback
+- **Feedback loop** — thumbs up/down on past results for future evaluation
+- **Graceful degradation** — fully functional without a database
+- **Vercel-ready** — serverless deployment with zero configuration
 
 ---
 
 ## Architecture
 
 ```
-Login_Data.csv
-      |
-      v
-  pipeline.py          <-- feature engineering, label encoding, model training
-      |
-      +-- encoders.pkl           (LabelEncoder for Country, Browser, Device)
-      +-- regressor_model.pkl    (RandomForest - predicts heuristic anomaly score)
-      +-- isolation_forest.pkl   (IsolationForest - unsupervised outlier detection)
-      |
-      v
-    app.py              <-- FastAPI server (+ async MongoDB via motor)
-      |
-      +-- POST /detect  <-- accepts raw values, encodes internally, runs both models
-      +-- GET  /history <-- paginated detection history
-      +-- DELETE /history, /history/{id}  <-- clear or delete records
-      +-- PATCH /history/{id}/feedback    <-- mark correct/incorrect
-      +-- GET  /        <-- serves web UI
-      +-- GET  /health  <-- model & DB status
-      |
-      v
-  templates/index.html  <-- Full UI (Landing, Detector, Dashboard, History, Settings)
+Login Data (CSV or synthetic)
+          |
+          v
+    pipeline.py        Feature engineering, label encoding, model training
+          |
+          +-- encoders.pkl          (Country, Browser, Device label maps)
+          +-- regressor_model.pkl   (Random Forest regressor)
+          +-- isolation_forest.pkl  (Isolation Forest detector)
+          |
+          v
+      app.py            FastAPI server + async MongoDB (motor)
+          |
+          +-- POST /detect     Run both models on a login event
+          +-- GET  /history    Paginated detection records
+          +-- DELETE /history   Clear or delete records
+          +-- PATCH /history/{id}/feedback  Mark correct/incorrect
+          +-- GET  /            Serve web UI
+          +-- GET  /health      Model and database status
+          |
+          v
+  templates/index.html  Single-page UI (5 tabs, animated, responsive)
 ```
+
+---
 
 ## How It Works
 
-### The Limitation (Honest Admission)
-This project creates a **rule-based heuristic target** score (0-10):
+### Heuristic Target Score
+
+Each login event is scored (0-10) based on behavioral rules derived from known attack patterns:
 
 | Condition | Points |
 |-----------|--------|
@@ -43,40 +77,93 @@ This project creates a **rule-based heuristic target** score (0-10):
 | Device types > 3 | +1 |
 | IP addresses > 4 | +1 |
 | Browser categories > 3 | +1 |
-| Time diff between 0-5 sec | +1 |
-| Browser is a bot | +2 |
-| Device type is bot | +2 |
-| Login ratio > 10 | +1 |
+| Consecutive logins < 5s apart | +1 |
+| Browser identified as bot | +2 |
+| Device identified as bot | +2 |
+| Login failure ratio > 10 | +1 |
 
-**Random Forest** is trained to predict this score — it learns to approximate its own rules. This is a known limitation (the model validates the heuristic rather than discovering true anomalies).
+### Model 1 — Random Forest Regressor
 
-### The Improvement
-**Isolation Forest** runs alongside as a truly unsupervised method. It detects outliers based on how easily a point can be isolated, without requiring any labels. Both results are returned per request.
+Trained to predict the heuristic score from raw login features. While this creates a circular dependency (the model validates the same rules it learns), it provides a smooth, continuous score that is more robust than individual rule checks.
+
+### Model 2 — Isolation Forest
+
+A truly unsupervised detector that identifies outliers by measuring how easily a point can be isolated from the rest. This catches patterns the heuristic rules may miss, offering an independent second opinion.
+
+---
+
+## Model Performance
+
+| Metric | Random Forest |
+|--------|--------------|
+| MSE | 0.000086 |
+| RMSE | 0.009 |
+| MAE | 0.0005 |
+
+---
 
 ## Quick Start
 
-### Local
+### Prerequisites
+
+- Python 3.10+
+- MongoDB (optional — app runs without it)
+
+### Local Development
+
 ```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Start the server
 uvicorn app:app --reload
-# Open http://localhost:8000
+
+# Open in browser
+open http://localhost:8000
 ```
 
-### Re-train Models (Optional)
+### Re-train Models
+
 ```bash
-# With synthetic data (for demo):
+# Using synthetic data (default, for demo)
 python pipeline.py
 
-# With real data:
+# Using real CSV data
 python pipeline.py --csv Login_Data.csv
 ```
 
+---
+
 ## API Reference
 
-### `POST /detect`
-Runs both models on a login event and returns scores. Saves to MongoDB (if available) or returns without persistence.
+### Health Check
 
-**Request Body:**
+```
+GET /health
+```
+
+Returns model load status and MongoDB connection state.
+
+```json
+{
+  "status": "ok",
+  "regressor_loaded": true,
+  "isolation_forest_loaded": true,
+  "encoders_loaded": true,
+  "mongodb_connected": false
+}
+```
+
+### Detect Anomaly
+
+```
+POST /detect
+```
+
+Accepts raw login event attributes and returns scores from both models. Results are saved to MongoDB if available.
+
+**Request:**
+
 ```json
 {
   "Country": "NO",
@@ -93,9 +180,10 @@ Runs both models on a login event and returns scores. Saves to MongoDB (if avail
 ```
 
 **Response:**
+
 ```json
 {
-  "id": "",
+  "id": "665a1b2c...",
   "anomalous_score": 1.01,
   "risk_level": "Low",
   "is_anomalous": false,
@@ -103,64 +191,95 @@ Runs both models on a login event and returns scores. Saves to MongoDB (if avail
 }
 ```
 
-### `GET /history?skip=0&limit=50`
-Paginated history of past detections. Returns empty array if MongoDB is offline — frontend falls back to localStorage.
+**cURL Example:**
 
-### `DELETE /history` or `DELETE /history/{id}`
-Clear all or delete a single record.
+```bash
+curl -X POST https://anomaly-detection-eosin.vercel.app/detect \
+  -H "Content-Type: application/json" \
+  -d '{"Country":"NO","Device_Type":"mobile","Login_Successful":1,"LoginRatio":0.05,"Browser_Category":"Chrome","Total_Device_Types":2,"Total_IP_Addresses":1,"Total_Countries":1,"Total_Browser_Categories":4,"Time_Difference_in_sec":0.5}'
+```
 
-### `PATCH /history/{id}/feedback`
-Body: `{"feedback": "correct" | "incorrect" | null}`
+### History
 
-### `GET /health`
-Returns model load status and MongoDB connection state.
+```
+GET /history?skip=0&limit=50
+```
+
+Returns paginated detection records. When MongoDB is unavailable, the frontend gracefully falls back to browser localStorage.
+
+```
+DELETE /history
+DELETE /history/{id}
+```
+
+Clear all records or delete a specific one.
+
+```
+PATCH /history/{id}/feedback
+```
+
+Submit feedback on a detection. Accepts `"correct"`, `"incorrect"`, or `null`.
+
+```json
+{
+  "feedback": "correct"
+}
+```
+
+---
 
 ## Deployment
 
-### Vercel (Primary)
-[![Deployed on Vercel](https://vercel.com/button)](https://anomaly-detection-eosin.vercel.app)
+### Vercel
 
-1. Push to GitHub
-2. Import project in Vercel
-3. Auto-detects `vercel.json`
+[![Deploy to Vercel](https://vercel.com/button)](https://vercel.com/import/project?template=https://github.com/sujalthapa369/Anomaly-detection)
 
-**Optional:** Set `MONGODB_URL` environment variable to a MongoDB Atlas connection string for persistent history across sessions. Without it, the app runs fully offline — history stores in browser localStorage.
+1. Push the repository to GitHub
+2. Import the project in Vercel (auto-detects `vercel.json`)
+3. (Optional) Add `MONGODB_URL` environment variable for persistent history
 
-## Dataset
+### MongoDB Atlas (Optional)
 
-- **31.2 million** login records
-- **4.3 million** unique users
-- **217** countries, **5** device types, ~600 browser categories
-- Time range: Feb 2020 - Feb 2021
-- A single outlier user had **14M+ failed attempts** (bot)
+For persistent detection history across sessions, create a free MongoDB Atlas cluster and set the `MONGODB_URL` environment variable in your deployment platform:
 
-## Model Performance
+```env
+MONGODB_URL=mongodb+srv://<user>:<password>@<cluster>.mongodb.net/anomaly_detection?retryWrites=true&w=majority
+```
 
-| Metric | Random Forest |
-|--------|--------------|
-| MSE | 0.000086 |
-| RMSE | 0.009 |
-| MAE | 0.0005 |
+The application detects the database connection at startup and degrades gracefully when unavailable.
 
-## Limitations
-
-1. **Circular target**: The regressor predicts a score derived from the same features it trains on — it validates heuristic rules rather than detecting novel anomalies.
-2. **Label encoding**: Country and browser encoders need periodic retraining as new values appear.
-3. **No ground truth**: There are no confirmed "attack" labels; the heuristic is an approximation.
-4. **MongoDB optional**: Without Atlas, history is stored in browser localStorage (single-device only).
+---
 
 ## Project Structure
 
 ```
-├── app.py                # FastAPI backend + all API routes
-├── pipeline.py           # Training pipeline (encoders + models)
-├── db.py                 # Async MongoDB module (motor)
-├── requirements.txt
-├── vercel.json
-├── render.yaml           # Render deployment config
-├── api/index.py          # Vercel entry point
-├── encoders.pkl          # Label encoders for raw value mapping
-├── regressor_model.pkl   # Trained RandomForest regressor
-├── isolation_forest.pkl  # Trained IsolationForest
-└── templates/index.html  # Full web UI (single page)
+├── app.py                  FastAPI server with all API routes
+├── pipeline.py             Training pipeline (encoders + models)
+├── db.py                   Async MongoDB client (motor) with offline fallback
+├── api/index.py            Vercel serverless entry point
+├── templates/index.html    Single-page animated dashboard UI
+├── requirements.txt        Python dependencies
+├── vercel.json             Vercel deployment configuration
+├── render.yaml             Render deployment configuration
+├── encoders.pkl            Serialized label encoders
+├── regressor_model.pkl     Trained Random Forest regressor
+└── isolation_forest.pkl    Trained Isolation Forest detector
 ```
+
+---
+
+## Limitations
+
+1. **Circular target** — The regressor predicts a score derived from the same features it trains on. It validates heuristic rules rather than discovering novel anomalies. The Isolation Forest partially mitigates this.
+
+2. **Label encoding drift** — Country and browser encoders require periodic retraining as new values appear in production data.
+
+3. **No ground truth** — Without confirmed attack labels, the heuristic score is an approximation. Feedback collection (thumbs up/down) is designed to address this over time.
+
+4. **Local history fallback** — Without MongoDB Atlas, detection history is stored in browser localStorage and does not persist across devices or sessions.
+
+---
+
+## License
+
+MIT
