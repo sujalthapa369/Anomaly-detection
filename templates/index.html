@@ -153,7 +153,21 @@ body{
 
 /* ── main ── */
 .main{padding:32px 40px;max-width:1000px;position:relative}
-@media(max-width:768px){.main{padding:20px 16px}}
+@media(max-width:768px){
+  .main{padding:20px 16px}
+  .landing-badge{font-size:9px;padding:4px 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:90vw}
+  .landing .sub{font-size:13px;padding:0 8px}
+  .card{padding:18px 16px}
+  .card-title{font-size:14px}
+  .card-subtitle{font-size:11px}
+  .top-nav{top:12px;right:12px;gap:4px}
+  .top-nav-brand{margin-right:6px;padding-right:6px}
+  .top-nav-brand span{display:none}
+  .top-nav a{padding:5px 10px;font-size:11px}
+  .top-nav a.primary{display:none}
+  .stat-value{font-size:20px}
+  .stat-label{font-size:10px}
+}
 .home-mode .main{margin:0 auto}
 
 /* ── page transitions ── */
