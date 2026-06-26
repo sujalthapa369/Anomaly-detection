@@ -864,32 +864,26 @@ function saveLocalHistory(h){try{localStorage.setItem('anomalyHistory',JSON.stri
 async function renderHistory(){
   var list=document.getElementById('historyList');
   var source=document.getElementById('historySource');
+  var localItems=getLocalHistory();
+  var apiItems=[];
   try{
     var res=await fetch('/history?limit=100');
-    if(res.ok){
-      var data=await res.json();
-      source.textContent='Past results stored in database.';
-      if(!data.records.length){list.innerHTML='<div class="history-empty">No detection records yet.</div>';document.getElementById('historyCount').textContent='0 records';return}
-      document.getElementById('historyCount').textContent=data.total+' record'+(data.total!==1?'s':'');
-      list.innerHTML=data.records.map(function(item){
-        var cls=item.is_anomalous?'danger':(item.risk_level==='Medium'?'warning':'safe');
-        var label=item.is_anomalous?'Anomalous':(item.risk_level==='Medium'?'Suspicious':'Normal');
-        var fb=item.feedback||'';
-        var upCls=fb==='correct'?'active':'';
-        var dnCls=fb==='incorrect'?'active':'';
-        return '<div class="history-item"><div class="hi-left"><div class="hi-time">'+item.created_at.slice(0,19).replace('T',' ')+'</div><div class="hi-score">Score: '+item.anomalous_score.toFixed(2)+'</div></div><div style="display:flex;align-items:center;gap:6px"><span class="result-badge '+cls+'">'+label+'</span><button class="fb-btn '+upCls+'" onclick="feedback(\''+item.id+'\',\'correct\')" title="Correct">&#x1F44D;</button><button class="fb-btn '+dnCls+'" onclick="feedback(\''+item.id+'\',\'incorrect\')" title="Incorrect">&#x1F44E;</button></div></div>';
-      }).join('');
-      return;
-    }
+    if(res.ok) apiItems=(await res.json()).records;
   }catch(e){}
-  // fallback to localStorage
-  source.textContent='Past results stored locally (offline mode).';
-  var items=getLocalHistory();
+  var items=apiItems.length?apiItems:localItems.slice().reverse();
+  source.textContent=apiItems.length?'Past results stored in database.':'Past results stored locally.';
   document.getElementById('historyCount').textContent=items.length+' record'+(items.length!==1?'s':'');
   if(!items.length){list.innerHTML='<div class="history-empty">No detection records yet.</div>';return}
-  list.innerHTML=items.slice().reverse().map(function(item){
-    var cls=item.isAnom?'danger':(item.risk==='Medium'?'warning':'safe');
-    return '<div class="history-item"><div class="hi-left"><div class="hi-time">'+item.time+'</div><div class="hi-score">Score: '+item.score.toFixed(2)+'</div></div><span class="result-badge '+cls+'">'+(item.isAnom?'Anomalous':(item.risk==='Medium'?'Suspicious':'Normal'))+'</span></div>';
+  list.innerHTML=items.map(function(item){
+    var cls=item.is_anomalous!=null?(item.is_anomalous?'danger':(item.risk_level==='Medium'?'warning':'safe')):(item.isAnom?'danger':(item.risk==='Medium'?'warning':'safe'));
+    var label=item.is_anomalous!=null?(item.is_anomalous?'Anomalous':(item.risk_level==='Medium'?'Suspicious':'Normal')):(item.isAnom?'Anomalous':(item.risk==='Medium'?'Suspicious':'Normal'));
+    var tm=item.created_at?item.created_at.slice(0,19).replace('T',' '):item.time;
+    var sc=item.anomalous_score!=null?item.anomalous_score.toFixed(2):item.score.toFixed(2);
+    if(item.id){
+      var fb=item.feedback||'';
+      return '<div class="history-item"><div class="hi-left"><div class="hi-time">'+tm+'</div><div class="hi-score">Score: '+sc+'</div></div><div style="display:flex;align-items:center;gap:6px"><span class="result-badge '+cls+'">'+label+'</span><button class="fb-btn '+(fb==='correct'?'active':'')+'" onclick="feedback(\''+item.id+'\',\'correct\')" title="Correct">&#x1F44D;</button><button class="fb-btn '+(fb==='incorrect'?'active':'')+'" onclick="feedback(\''+item.id+'\',\'incorrect\')" title="Incorrect">&#x1F44E;</button></div></div>';
+    }
+    return '<div class="history-item"><div class="hi-left"><div class="hi-time">'+tm+'</div><div class="hi-score">Score: '+sc+'</div></div><span class="result-badge '+cls+'">'+label+'</span></div>';
   }).join('');
 }
 async function clearHistory(){
