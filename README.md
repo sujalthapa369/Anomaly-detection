@@ -1,6 +1,8 @@
 # Anomaly Detection Engine
 
-Detect anomalous login behavior using **XGBoost regression** (supervised heuristic) and **Isolation Forest** (unsupervised anomaly detection). Deployed as a FastAPI web service with a modern dashboard UI.
+Detect anomalous login behavior using **Random Forest regression** (supervised heuristic) and **Isolation Forest** (unsupervised anomaly detection). Deployed as a FastAPI web service with a modern animated dashboard UI.
+
+**Live Demo:** [https://anomaly-detection-eosin.vercel.app](https://anomaly-detection-eosin.vercel.app)
 
 ---
 
@@ -13,23 +15,27 @@ Login_Data.csv
   pipeline.py          <-- feature engineering, label encoding, model training
       |
       +-- encoders.pkl           (LabelEncoder for Country, Browser, Device)
-      +-- regressor_model.pkl    (XGBoost - predicts heuristic anomaly score)
+      +-- regressor_model.pkl    (RandomForest - predicts heuristic anomaly score)
       +-- isolation_forest.pkl   (IsolationForest - unsupervised outlier detection)
       |
       v
-    app.py              <-- FastAPI server
+    app.py              <-- FastAPI server (+ async MongoDB via motor)
       |
       +-- POST /detect  <-- accepts raw values, encodes internally, runs both models
+      +-- GET  /history <-- paginated detection history
+      +-- DELETE /history, /history/{id}  <-- clear or delete records
+      +-- PATCH /history/{id}/feedback    <-- mark correct/incorrect
       +-- GET  /        <-- serves web UI
+      +-- GET  /health  <-- model & DB status
       |
       v
-  templates/index.html  <-- Dashboard UI (Detector, Dashboard, History tabs)
+  templates/index.html  <-- Full UI (Landing, Detector, Dashboard, History, Settings)
 ```
 
 ## How It Works
 
-### The Problem
-This project originally created a **rule-based heuristic target** score (0-10):
+### The Limitation (Honest Admission)
+This project creates a **rule-based heuristic target** score (0-10):
 
 | Condition | Points |
 |-----------|--------|
@@ -42,12 +48,10 @@ This project originally created a **rule-based heuristic target** score (0-10):
 | Device type is bot | +2 |
 | Login ratio > 10 | +1 |
 
-**XGBoost** was trained to predict this score — which means it learns to approximate its own rules. This is a known limitation (the model validates the heuristic rather than discovering true anomalies).
+**Random Forest** is trained to predict this score — it learns to approximate its own rules. This is a known limitation (the model validates the heuristic rather than discovering true anomalies).
 
 ### The Improvement
-**Isolation Forest** is added alongside as a truly unsupervised method. It detects outliers based on how easily a point can be isolated, without requiring any labels.
-
-Both results are returned per request.
+**Isolation Forest** runs alongside as a truly unsupervised method. It detects outliers based on how easily a point can be isolated, without requiring any labels. Both results are returned per request.
 
 ## Quick Start
 
@@ -67,15 +71,10 @@ python pipeline.py
 python pipeline.py --csv Login_Data.csv
 ```
 
-### Docker
-```bash
-docker build -t anomaly-detector .
-docker run -p 8000:8000 anomaly-detector
-```
-
 ## API Reference
 
 ### `POST /detect`
+Runs both models on a login event and returns scores. Saves to MongoDB (if available) or returns without persistence.
 
 **Request Body:**
 ```json
@@ -96,6 +95,7 @@ docker run -p 8000:8000 anomaly-detector
 **Response:**
 ```json
 {
+  "id": "",
   "anomalous_score": 1.01,
   "risk_level": "Low",
   "is_anomalous": false,
@@ -103,27 +103,28 @@ docker run -p 8000:8000 anomaly-detector
 }
 ```
 
-**cURL Example:**
-```bash
-curl -X POST http://localhost:8000/detect \
-  -H "Content-Type: application/json" \
-  -d '{"Country":"NO","Device_Type":"mobile","Login_Successful":1,"LoginRatio":0.05,"Browser_Category":"Chrome","Total_Device_Types":2,"Total_IP_Addresses":1,"Total_Countries":1,"Total_Browser_Categories":4,"Time_Difference_in_sec":0.5}'
-```
+### `GET /history?skip=0&limit=50`
+Paginated history of past detections. Returns empty array if MongoDB is offline — frontend falls back to localStorage.
+
+### `DELETE /history` or `DELETE /history/{id}`
+Clear all or delete a single record.
+
+### `PATCH /history/{id}/feedback`
+Body: `{"feedback": "correct" | "incorrect" | null}`
 
 ### `GET /health`
-Returns model load status.
+Returns model load status and MongoDB connection state.
 
 ## Deployment
 
-### Render
-1. Push to GitHub
-2. Create new Web Service
-3. Set start command: `uvicorn app:app --host 0.0.0.0 --port $PORT`
+### Vercel (Primary)
+[![Deployed on Vercel](https://vercel.com/button)](https://anomaly-detection-eosin.vercel.app)
 
-### Vercel
 1. Push to GitHub
 2. Import project in Vercel
 3. Auto-detects `vercel.json`
+
+**Optional:** Set `MONGODB_URL` environment variable to a MongoDB Atlas connection string for persistent history across sessions. Without it, the app runs fully offline — history stores in browser localStorage.
 
 ## Dataset
 
@@ -135,30 +136,31 @@ Returns model load status.
 
 ## Model Performance
 
-| Metric | XGBoost |
-|--------|---------|
-| MSE | 0.003 |
-| RMSE | 0.055 |
-| MAE | 0.007 |
+| Metric | Random Forest |
+|--------|--------------|
+| MSE | 0.000086 |
+| RMSE | 0.009 |
+| MAE | 0.0005 |
 
 ## Limitations
 
-1. **Circular target**: XGBoost predicts a score derived from the same features it trains on — it validates heuristic rules rather than detecting novel anomalies.
+1. **Circular target**: The regressor predicts a score derived from the same features it trains on — it validates heuristic rules rather than detecting novel anomalies.
 2. **Label encoding**: Country and browser encoders need periodic retraining as new values appear.
 3. **No ground truth**: There are no confirmed "attack" labels; the heuristic is an approximation.
+4. **MongoDB optional**: Without Atlas, history is stored in browser localStorage (single-device only).
 
 ## Project Structure
 
 ```
-├── app.py                # FastAPI backend
+├── app.py                # FastAPI backend + all API routes
 ├── pipeline.py           # Training pipeline (encoders + models)
+├── db.py                 # Async MongoDB module (motor)
 ├── requirements.txt
-├── Dockerfile
 ├── vercel.json
-├── render.yaml
-├── encoders.pkl          # Label encoders for raw value mapping
-├── regressor_model.pkl   # Trained XGBoost
-├── isolation_forest.pkl  # Trained IsolationForest
+├── render.yaml           # Render deployment config
 ├── api/index.py          # Vercel entry point
-└── templates/index.html  # Web UI
+├── encoders.pkl          # Label encoders for raw value mapping
+├── regressor_model.pkl   # Trained RandomForest regressor
+├── isolation_forest.pkl  # Trained IsolationForest
+└── templates/index.html  # Full web UI (single page)
 ```
