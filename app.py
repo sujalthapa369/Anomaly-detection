@@ -31,7 +31,7 @@ def load_artifact(name):
             return pickle.load(f)
     return None
 
-model_xgb = load_artifact("regressor_model.pkl")
+model_reg = load_artifact("regressor_model.pkl")
 model_ifo = load_artifact("isolation_forest.pkl")
 encoders  = load_artifact("encoders.pkl")
 
@@ -133,8 +133,8 @@ async def index():
 
 @app.post("/detect", response_model=AnomalyResponse)
 async def detect(data: AnomalyInput):
-    if model_xgb is None:
-        raise HTTPException(500, "XGBoost model not loaded")
+    if model_reg is None:
+        raise HTTPException(500, "Regression model not loaded")
 
     country_enc = encode_country(data.Country)
     device_enc  = encode_device(data.Device_Type)
@@ -146,7 +146,7 @@ async def detect(data: AnomalyInput):
         data.Total_Browser_Categories, data.Time_Difference_in_sec
     ]])
 
-    score = float(model_xgb.predict(features)[0])
+    score = float(model_reg.predict(features)[0])
     score = round(max(0, min(10, score)), 2)
 
     if score >= 3:
@@ -219,7 +219,7 @@ async def set_feedback(id: str, body: dict):
 async def health():
     return {
         "status": "ok",
-        "xgb_loaded": model_xgb is not None,
+        "regressor_loaded": model_reg is not None,
         "isolation_forest_loaded": model_ifo is not None,
         "encoders_loaded": encoders is not None,
         "mongodb_connected": database.available

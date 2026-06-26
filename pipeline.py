@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import IsolationForest
-from xgboost import XGBRegressor
+from sklearn.ensemble import RandomForestRegressor
 
 OUTPUT = os.path.dirname(os.path.abspath(__file__))
 
@@ -156,17 +156,17 @@ def main():
     from sklearn.model_selection import train_test_split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    print("\nTraining XGBoost regressor...")
-    xgb = XGBRegressor(n_estimators=100, random_state=42)
-    xgb.fit(X_train, y_train)
+    print("\nTraining Random Forest regressor...")
+    rf = RandomForestRegressor(n_estimators=100, random_state=42)
+    rf.fit(X_train, y_train)
 
-    y_pred = xgb.predict(X_test)
+    y_pred = rf.predict(X_test)
     from sklearn.metrics import mean_squared_error, mean_absolute_error
     mse = mean_squared_error(y_test, y_pred)
-    print(f"XGBoost - MSE: {mse:.6f}, RMSE: {np.sqrt(mse):.6f}, MAE: {mean_absolute_error(y_test, y_pred):.6f}")
+    print(f"RandomForest - MSE: {mse:.6f}, RMSE: {np.sqrt(mse):.6f}, MAE: {mean_absolute_error(y_test, y_pred):.6f}")
 
     with open(os.path.join(OUTPUT, "regressor_model.pkl"), "wb") as f:
-        pickle.dump(xgb, f)
+        pickle.dump(rf, f)
     print("Saved regressor_model.pkl")
 
     print("\nTraining Isolation Forest (unsupervised)...")
